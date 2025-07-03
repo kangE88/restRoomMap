@@ -196,9 +196,9 @@ export default function Home() {
           
           {clickedPosition && (
             <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '8px', border: '1px solid #dee2e6' }}>
-              <h3>📍 선택한 위치 저장</h3>
-              <p><strong>위도:</strong> {clickedPosition.lat.toFixed(6)}</p>
-              <p><strong>경도:</strong> {clickedPosition.lng.toFixed(6)}</p>
+              <h3 style={{ color: '#000000', margin: '0 0 10px 0' }}>📍 선택한 위치 저장</h3>
+              <p style={{ color: '#000000', margin: '5px 0' }}><strong>위도:</strong> {clickedPosition.lat.toFixed(6)}</p>
+              <p style={{ color: '#000000', margin: '5px 0' }}><strong>경도:</strong> {clickedPosition.lng.toFixed(6)}</p>
               
               <div style={{ marginTop: '10px' }}>
                 <input
@@ -210,8 +210,9 @@ export default function Home() {
                     padding: '8px', 
                     width: '300px', 
                     marginRight: '10px',
-                    border: '1px solid #ced4da',
-                    borderRadius: '4px'
+                    border: '1px solid #000000',
+                    borderRadius: '4px',
+                    color: '#000000'
                   }}
                   onKeyPress={(e) => {
                     if (e.key === 'Enter') {
@@ -223,7 +224,7 @@ export default function Home() {
                   onClick={saveLocation}
                   style={{ 
                     padding: '8px 16px',
-                    backgroundColor: '#007bff',
+                    backgroundColor: '#000000',
                     color: 'white',
                     border: 'none',
                     borderRadius: '4px',
