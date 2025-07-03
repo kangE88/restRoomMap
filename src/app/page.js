@@ -173,6 +173,11 @@ export default function Home() {
             value={email}
             placeholder="이메일 입력"
             onChange={(e) => setEmail(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                handleAuth()
+              }
+            }}
             style={{ padding: '8px', width: '300px' }}
           />
           <button onClick={handleAuth} style={{ marginLeft: '10px' }}>
