@@ -12,6 +12,10 @@ export default function Home() {
   const [savedLocations, setSavedLocations] = useState([])
   const [map, setMap] = useState(null)
   const [markers, setMarkers] = useState([])
+  const [isExporting, setIsExporting] = useState(false)
+  const [isEmailing, setIsEmailing] = useState(false)
+  const [emailForExport, setEmailForExport] = useState('')
+  const [showEmailModal, setShowEmailModal] = useState(false)
 
   const handleAuth = async () => {
     const res = await fetch('/api/auth', {
@@ -171,6 +175,63 @@ export default function Home() {
         tempMarker.setMap(null)
         tempInfoWindow.close()
       }, 3000)
+    }
+  }
+
+  const exportLocations = async () => {
+    setIsExporting(true)
+    try {
+      const response = await fetch('/api/export')
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'locations.json'
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        alert('위치 데이터가 성공적으로 내보내졌습니다!')
+      } else {
+        alert('내보내기에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('내보내기 오류:', error)
+      alert('내보내기 중 오류가 발생했습니다.')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const sendEmail = async () => {
+    if (!emailForExport.trim()) {
+      alert('이메일 주소를 입력해주세요.')
+      return
+    }
+
+    setIsEmailing(true)
+    try {
+      const response = await fetch('/api/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailForExport.trim() }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        alert('이메일이 성공적으로 전송되었습니다!')
+        setShowEmailModal(false)
+        setEmailForExport('')
+      } else {
+        alert(data.message || '이메일 전송에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('이메일 전송 오류:', error)
+      alert('이메일 전송 중 오류가 발생했습니다.')
+    } finally {
+      setIsEmailing(false)
     }
   }
 
@@ -368,7 +429,45 @@ export default function Home() {
 
           {savedLocations.length > 0 && (
             <div style={{ marginTop: '20px' }}>
-              <h3>💾 저장된 위치 목록</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h3>💾 저장된 위치 목록</h3>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button 
+                    onClick={exportLocations}
+                    disabled={isExporting}
+                    style={{ 
+                      padding: '8px 16px',
+                      backgroundColor: '#28a745',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: isExporting ? 'not-allowed' : 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold',
+                      opacity: isExporting ? 0.6 : 1
+                    }}
+                  >
+                    {isExporting ? '📥 내보내는 중...' : '📥 JSON 내보내기'}
+                  </button>
+                  <button 
+                    onClick={() => setShowEmailModal(true)}
+                    disabled={isEmailing}
+                    style={{ 
+                      padding: '8px 16px',
+                      backgroundColor: '#007bff',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: isEmailing ? 'not-allowed' : 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold',
+                      opacity: isEmailing ? 0.6 : 1
+                    }}
+                  >
+                    {isEmailing ? '📧 전송 중...' : '📧 이메일로 보내기'}
+                  </button>
+                </div>
+              </div>
               <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #dee2e6', borderRadius: '8px' }}>
                 {savedLocations.map((location) => (
                   <div 
@@ -426,6 +525,90 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* 이메일 전송 모달 */}
+          {showEmailModal && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              zIndex: 1000
+            }}>
+              <div style={{
+                backgroundColor: 'white',
+                padding: '30px',
+                borderRadius: '8px',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                maxWidth: '400px',
+                width: '90%'
+              }}>
+                <h3 style={{ margin: '0 0 20px 0', color: '#333' }}>📧 이메일로 보내기</h3>
+                <p style={{ margin: '0 0 15px 0', color: '#666' }}>
+                  위치 데이터를 받을 이메일 주소를 입력하세요.
+                </p>
+                <input
+                  type="email"
+                  value={emailForExport}
+                  onChange={(e) => setEmailForExport(e.target.value)}
+                  placeholder="이메일 주소 입력"
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    marginBottom: '20px',
+                    fontSize: '14px'
+                  }}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      sendEmail()
+                    }
+                  }}
+                />
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => {
+                      setShowEmailModal(false)
+                      setEmailForExport('')
+                    }}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: '#6c757d',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '14px'
+                    }}
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={sendEmail}
+                    disabled={isEmailing}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: '#007bff',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: isEmailing ? 'not-allowed' : 'pointer',
+                      fontSize: '14px',
+                      opacity: isEmailing ? 0.6 : 1
+                    }}
+                  >
+                    {isEmailing ? '전송 중...' : '전송'}
+                  </button>
+                </div>
               </div>
             </div>
           )}
