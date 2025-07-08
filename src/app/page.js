@@ -10,12 +10,16 @@ export default function Home() {
   const [clickedPosition, setClickedPosition] = useState(null)
   const [memo, setMemo] = useState('')
   const [savedLocations, setSavedLocations] = useState([])
+  const [tempLocations, setTempLocations] = useState([])
   const [map, setMap] = useState(null)
   const [markers, setMarkers] = useState([])
+  const [tempMarkers, setTempMarkers] = useState([])
   const [isExporting, setIsExporting] = useState(false)
   const [isEmailing, setIsEmailing] = useState(false)
   const [emailForExport, setEmailForExport] = useState('')
   const [showEmailModal, setShowEmailModal] = useState(false)
+  const [showSaveModal, setShowSaveModal] = useState(false)
+  const [selectedLocations, setSelectedLocations] = useState([])
 
   const handleAuth = async () => {
     const res = await fetch('/api/auth', {
@@ -50,64 +54,54 @@ export default function Home() {
     }
   }
 
-  const saveLocation = async () => {
+  const saveLocation = () => {
     if (!clickedPosition || !memo.trim()) {
       alert('위치를 선택하고 메모를 입력해주세요.')
       return
     }
 
-    try {
-      const res = await fetch('/api/locations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lat: clickedPosition.lat,
-          lng: clickedPosition.lng,
-          memo: memo.trim()
-        }),
+    // 임시 저장
+    const newLocation = {
+      id: Date.now(),
+      lat: clickedPosition.lat,
+      lng: clickedPosition.lng,
+      memo: memo.trim(),
+      timestamp: new Date().toLocaleString()
+    }
+
+    setTempLocations(prev => [...prev, newLocation])
+    setMemo('')
+    
+    // 지도에 임시 마커 추가
+    if (map && window.kakao) {
+      const markerPosition = new window.kakao.maps.LatLng(newLocation.lat, newLocation.lng)
+      const marker = new window.kakao.maps.Marker({
+        map: map,
+        position: markerPosition,
+        zIndex: 500 // 임시 마커는 일반 마커보다 위에 표시
       })
 
-      const data = await res.json()
+      const iwContent = `<div style="padding:5px; width:200px; text-align:center; background-color: #fff3cd; border: 2px solid #ffc107;">
+        <strong style="color: #856404;">🔄 임시 저장</strong><br>
+        <strong>${newLocation.memo}</strong><br>
+        위도: ${newLocation.lat.toFixed(6)}<br>
+        경도: ${newLocation.lng.toFixed(6)}<br>
+        저장시간: ${newLocation.timestamp}
+      </div>`
+      
+      const infowindow = new window.kakao.maps.InfoWindow({
+        content: iwContent,
+        removable: true
+      })
 
-      if (res.ok && data.success) {
-        const newLocation = data.location
-        setSavedLocations(prev => [...prev, newLocation])
-        setMemo('')
-        
-        // 지도에 마커 추가
-        if (map && window.kakao) {
-          const markerPosition = new window.kakao.maps.LatLng(newLocation.lat, newLocation.lng)
-          const marker = new window.kakao.maps.Marker({
-            map: map,
-            position: markerPosition
-          })
+      window.kakao.maps.event.addListener(marker, 'click', function() {
+        infowindow.open(map, marker)
+      })
 
-          const iwContent = `<div style="padding:5px; width:200px; text-align:center;">
-            <strong>${newLocation.memo}</strong><br>
-            위도: ${newLocation.lat.toFixed(6)}<br>
-            경도: ${newLocation.lng.toFixed(6)}<br>
-            저장시간: ${newLocation.timestamp}
-          </div>`
-          
-          const infowindow = new window.kakao.maps.InfoWindow({
-            content: iwContent,
-            removable: true
-          })
-
-          window.kakao.maps.event.addListener(marker, 'click', function() {
-            infowindow.open(map, marker)
-          })
-
-          setMarkers(prev => [...prev, { marker, infowindow, id: newLocation.id }])
-        }
-
-        alert('위치가 저장되었습니다!')
-      } else {
-        alert(data.message || '저장에 실패했습니다.')
-      }
-    } catch (error) {
-      alert('저장 중 오류가 발생했습니다.')
+      setTempMarkers(prev => [...prev, { marker, infowindow, id: newLocation.id }])
     }
+
+    alert('위치가 임시로 저장되었습니다! 영구 저장하려면 "임시 저장 목록"에서 선택하여 저장하세요.')
   }
 
   const deleteLocation = async (id) => {
@@ -233,6 +227,102 @@ export default function Home() {
     } finally {
       setIsEmailing(false)
     }
+  }
+
+  const saveSelectedLocations = async () => {
+    if (selectedLocations.length === 0) {
+      alert('저장할 위치를 선택해주세요.')
+      return
+    }
+
+    try {
+      // 선택된 위치들을 영구 저장
+      for (const locationId of selectedLocations) {
+        const location = tempLocations.find(loc => loc.id === locationId)
+        if (location) {
+          const res = await fetch('/api/locations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lat: location.lat,
+              lng: location.lng,
+              memo: location.memo
+            }),
+          })
+
+          if (res.ok) {
+            const data = await res.json()
+            if (data.success) {
+              // 영구 저장된 위치를 저장된 목록에 추가
+              setSavedLocations(prev => [...prev, data.location])
+              
+              // 임시 마커를 일반 마커로 변경
+              const tempMarker = tempMarkers.find(m => m.id === locationId)
+              if (tempMarker && map) {
+                // 임시 마커 제거
+                tempMarker.marker.setMap(null)
+                
+                // 일반 마커 추가
+                const markerPosition = new window.kakao.maps.LatLng(location.lat, location.lng)
+                const marker = new window.kakao.maps.Marker({
+                  map: map,
+                  position: markerPosition
+                })
+
+                const iwContent = `<div style="padding:5px; width:200px; text-align:center;">
+                  <strong>${location.memo}</strong><br>
+                  위도: ${location.lat.toFixed(6)}<br>
+                  경도: ${location.lng.toFixed(6)}<br>
+                  저장시간: ${location.timestamp}
+                </div>`
+                
+                const infowindow = new window.kakao.maps.InfoWindow({
+                  content: iwContent,
+                  removable: true
+                })
+
+                window.kakao.maps.event.addListener(marker, 'click', function() {
+                  infowindow.open(map, marker)
+                })
+
+                setMarkers(prev => [...prev, { marker, infowindow, id: data.location.id }])
+              }
+            }
+          }
+        }
+      }
+
+      // 임시 저장에서 선택된 위치들 제거
+      setTempLocations(prev => prev.filter(loc => !selectedLocations.includes(loc.id)))
+      setTempMarkers(prev => prev.filter(m => !selectedLocations.includes(m.id)))
+      setSelectedLocations([])
+      setShowSaveModal(false)
+
+      alert('선택한 위치들이 영구 저장되었습니다!')
+    } catch (error) {
+      console.error('영구 저장 오류:', error)
+      alert('영구 저장 중 오류가 발생했습니다.')
+    }
+  }
+
+  const deleteTempLocation = (id) => {
+    // 임시 저장에서 제거
+    setTempLocations(prev => prev.filter(location => location.id !== id))
+    
+    // 임시 마커 제거
+    const tempMarker = tempMarkers.find(m => m.id === id)
+    if (tempMarker) {
+      tempMarker.marker.setMap(null)
+      setTempMarkers(prev => prev.filter(m => m.id !== id))
+    }
+  }
+
+  const toggleLocationSelection = (id) => {
+    setSelectedLocations(prev => 
+      prev.includes(id) 
+        ? prev.filter(locId => locId !== id)
+        : [...prev, id]
+    )
   }
 
   useEffect(() => {
@@ -427,10 +517,81 @@ export default function Home() {
             </div>
           )}
 
+          {tempLocations.length > 0 && (
+            <div style={{ marginTop: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h3>🔄 임시 저장 목록 ({tempLocations.length}개)</h3>
+                <button 
+                  onClick={() => setShowSaveModal(true)}
+                  disabled={selectedLocations.length === 0}
+                  style={{ 
+                    padding: '8px 16px',
+                    backgroundColor: selectedLocations.length > 0 ? '#28a745' : '#6c757d',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: selectedLocations.length > 0 ? 'pointer' : 'not-allowed',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    opacity: selectedLocations.length > 0 ? 1 : 0.6
+                  }}
+                >
+                  💾 선택 저장 ({selectedLocations.length}개)
+                </button>
+              </div>
+              <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid #ffc107', borderRadius: '8px', backgroundColor: '#fff3cd' }}>
+                {tempLocations.map((location) => (
+                  <div 
+                    key={location.id} 
+                    style={{ 
+                      padding: '15px', 
+                      borderBottom: '1px solid #ffeaa7',
+                      backgroundColor: selectedLocations.includes(location.id) ? '#ffeaa7' : 'transparent'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedLocations.includes(location.id)}
+                          onChange={() => toggleLocationSelection(location.id)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <div>
+                          <h4 style={{ margin: '0 0 5px 0', color: '#856404' }}>{location.memo}</h4>
+                          <p style={{ margin: '2px 0', fontSize: '12px', color: '#856404' }}>
+                            위도: {location.lat.toFixed(6)}, 경도: {location.lng.toFixed(6)}
+                          </p>
+                          <p style={{ margin: '2px 0', fontSize: '11px', color: '#856404' }}>
+                            저장시간: {location.timestamp}
+                          </p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => deleteTempLocation(location.id)}
+                        style={{ 
+                          padding: '4px 8px',
+                          backgroundColor: '#dc3545',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '12px'
+                        }}
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {savedLocations.length > 0 && (
             <div style={{ marginTop: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <h3>💾 저장된 위치 목록</h3>
+                <h3>💾 영구 저장된 위치 목록 ({savedLocations.length}개)</h3>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button 
                     onClick={exportLocations}
@@ -525,6 +686,83 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* 선택 저장 확인 모달 */}
+          {showSaveModal && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              zIndex: 1000
+            }}>
+              <div style={{
+                backgroundColor: 'white',
+                padding: '30px',
+                borderRadius: '8px',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                maxWidth: '500px',
+                width: '90%'
+              }}>
+                <h3 style={{ margin: '0 0 20px 0', color: '#333' }}>💾 선택한 위치 영구 저장</h3>
+                <p style={{ margin: '0 0 15px 0', color: '#666' }}>
+                  선택한 {selectedLocations.length}개의 위치를 영구 저장하시겠습니까?
+                </p>
+                <div style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: '20px' }}>
+                  {tempLocations
+                    .filter(location => selectedLocations.includes(location.id))
+                    .map(location => (
+                      <div key={location.id} style={{ 
+                        padding: '10px', 
+                        border: '1px solid #dee2e6', 
+                        borderRadius: '4px', 
+                        marginBottom: '5px',
+                        backgroundColor: '#f8f9fa'
+                      }}>
+                        <strong>{location.memo}</strong>
+                        <br />
+                        <small>위도: {location.lat.toFixed(6)}, 경도: {location.lng.toFixed(6)}</small>
+                      </div>
+                    ))}
+                </div>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => setShowSaveModal(false)}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: '#6c757d',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '14px'
+                    }}
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={saveSelectedLocations}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: '#28a745',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '14px'
+                    }}
+                  >
+                    영구 저장
+                  </button>
+                </div>
               </div>
             </div>
           )}
