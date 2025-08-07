@@ -1,10 +1,7 @@
-import { promises as fs } from 'fs'
-import path from 'path'
+import clientPromise from '@/lib/mongodb'
 import nodemailer from 'nodemailer'
 
-const LOCATIONS_FILE = path.join(process.cwd(), 'public', 'locations.json')
-
-// POST: JSON 파일을 이메일로 전송
+// POST: MongoDB에서 데이터를 조회하여 이메일로 전송
 export async function POST(req) {
   try {
     const body = await req.json()
@@ -17,13 +14,17 @@ export async function POST(req) {
       })
     }
 
-    // 위치 데이터 읽기
+    // MongoDB에서 위치 데이터 읽기
     let locations = { locations: [] }
     try {
-      const data = await fs.readFile(LOCATIONS_FILE, 'utf8')
-      locations = JSON.parse(data)
+      const client = await clientPromise
+      const db = client.db('Cluster0')
+      const locationsData = await db.collection('locationData').find({}).toArray()
+      console.log("🚀 ~ POST ~ locationsData:", locationsData)
+      locations = { locations: locationsData }
     } catch (error) {
-      // 파일이 없으면 빈 배열로 시작
+      console.error('MongoDB 조회 실패:', error)
+      // MongoDB 조회가 실패하면 빈 배열로 시작
     }
 
     // 이메일 전송기 설정

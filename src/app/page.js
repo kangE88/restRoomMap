@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import axios from 'axios'
 
 export default function Home() {
   const [email, setEmail] = useState('')
@@ -22,35 +23,34 @@ export default function Home() {
   const [selectedLocations, setSelectedLocations] = useState([])
 
   const handleAuth = async () => {
-    const res = await fetch('/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    })
-
-    const data = await res.json()
-
-    if (res.ok && data.success) {
-      setAuthed(true)
-      setMessage('✅ 인증되었습니다.')
+    try {
+      const response = await axios.post('/api/auth', { email })
       
-      // 저장된 위치 목록 불러오기
-      loadSavedLocations()
-    } else {
-      setMessage(data.message || '❌ 인증 실패')
+      if (response.data.success) {
+        setAuthed(true)
+        setMessage('✅ 인증되었습니다.')
+        
+        // 저장된 위치 목록 불러오기
+        loadSavedLocations()
+      } else {
+        setMessage(response.data.message || '❌ 인증 실패')
+      }
+    } catch (error) {
+      console.error('인증 오류:', error)
+      setMessage(error.response?.data?.message || '❌ 인증 실패')
     }
   }
 
   const loadSavedLocations = async () => {
     try {
-      const res = await fetch('/api/locations')
-      const data = await res.json()
-
-      if (res.ok && data.locations) {
-        setSavedLocations(data.locations)
+      const response = await axios.get('/api/locations')
+      
+      if (response.data.locations) {
+        setSavedLocations(response.data.locations)
       }
     } catch (error) {
       console.error('저장된 위치를 불러오는 중 오류가 발생했습니다:', error)
+      console.error('Error details:', error.response?.data)
     }
   }
 
@@ -106,13 +106,9 @@ export default function Home() {
 
   const deleteLocation = async (id) => {
     try {
-      const res = await fetch(`/api/locations?id=${id}`, {
-        method: 'DELETE',
-      })
+      const response = await axios.delete(`/api/locations?id=${id}`)
 
-      const data = await res.json()
-
-      if (res.ok && data.success) {
+      if (response.data.success) {
         setSavedLocations(prev => prev.filter(location => location.id !== id))
         
         // 지도에서 마커 제거
@@ -122,10 +118,11 @@ export default function Home() {
           setMarkers(prev => prev.filter(m => m.id !== id))
         }
       } else {
-        alert(data.message || '삭제에 실패했습니다.')
+        alert(response.data.message || '삭제에 실패했습니다.')
       }
     } catch (error) {
-      alert('삭제 중 오류가 발생했습니다.')
+      console.error('삭제 오류:', error)
+      alert(error.response?.data?.message || '삭제 중 오류가 발생했습니다.')
     }
   }
 
@@ -175,24 +172,29 @@ export default function Home() {
   const exportLocations = async () => {
     setIsExporting(true)
     try {
-      const response = await fetch('/api/export')
-      if (response.ok) {
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'locations.json'
-        document.body.appendChild(a)
-        a.click()
-        window.URL.revokeObjectURL(url)
-        document.body.removeChild(a)
-        alert('위치 데이터가 성공적으로 내보내졌습니다!')
-      } else {
-        alert('내보내기에 실패했습니다.')
-      }
+      const response = await axios.get('/api/export', {
+        responseType: 'blob'
+      })
+      
+      const blob = new Blob([response.data], { type: 'application/json' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      
+      // Content-Disposition 헤더에서 파일명 추출
+      const disposition = response.headers['content-disposition']
+      const filename = disposition?.split('filename=')[1]?.replace(/"/g, '') || 'locations.json'
+      a.download = filename
+      
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      alert('위치 데이터가 성공적으로 내보내졌습니다!')
+      
     } catch (error) {
       console.error('내보내기 오류:', error)
-      alert('내보내기 중 오류가 발생했습니다.')
+      alert(error.response?.data?.message || '내보내기 중 오류가 발생했습니다.')
     } finally {
       setIsExporting(false)
     }
@@ -206,24 +208,20 @@ export default function Home() {
 
     setIsEmailing(true)
     try {
-      const response = await fetch('/api/email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailForExport.trim() }),
+      const response = await axios.post('/api/email', {
+        email: emailForExport.trim()
       })
 
-      const data = await response.json()
-
-      if (response.ok && data.success) {
+      if (response.data.success) {
         alert('이메일이 성공적으로 전송되었습니다!')
         setShowEmailModal(false)
         setEmailForExport('')
       } else {
-        alert(data.message || '이메일 전송에 실패했습니다.')
+        alert(response.data.message || '이메일 전송에 실패했습니다.')
       }
     } catch (error) {
       console.error('이메일 전송 오류:', error)
-      alert('이메일 전송 중 오류가 발생했습니다.')
+      alert(error.response?.data?.message || '이메일 전송 중 오류가 발생했습니다.')
     } finally {
       setIsEmailing(false)
     }
@@ -240,53 +238,46 @@ export default function Home() {
       for (const locationId of selectedLocations) {
         const location = tempLocations.find(loc => loc.id === locationId)
         if (location) {
-          const res = await fetch('/api/locations', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              lat: location.lat,
-              lng: location.lng,
-              memo: location.memo
-            }),
+          const response = await axios.post('/api/locations', {
+            lat: location.lat,
+            lng: location.lng,
+            memo: location.memo
           })
 
-          if (res.ok) {
-            const data = await res.json()
-            if (data.success) {
-              // 영구 저장된 위치를 저장된 목록에 추가
-              setSavedLocations(prev => [...prev, data.location])
+          if (response.data.success) {
+            // 영구 저장된 위치를 저장된 목록에 추가
+            setSavedLocations(prev => [...prev, response.data.location])
+            
+            // 임시 마커를 일반 마커로 변경
+            const tempMarker = tempMarkers.find(m => m.id === locationId)
+            if (tempMarker && map) {
+              // 임시 마커 제거
+              tempMarker.marker.setMap(null)
               
-              // 임시 마커를 일반 마커로 변경
-              const tempMarker = tempMarkers.find(m => m.id === locationId)
-              if (tempMarker && map) {
-                // 임시 마커 제거
-                tempMarker.marker.setMap(null)
-                
-                // 일반 마커 추가
-                const markerPosition = new window.kakao.maps.LatLng(location.lat, location.lng)
-                const marker = new window.kakao.maps.Marker({
-                  map: map,
-                  position: markerPosition
-                })
+              // 일반 마커 추가
+              const markerPosition = new window.kakao.maps.LatLng(location.lat, location.lng)
+              const marker = new window.kakao.maps.Marker({
+                map: map,
+                position: markerPosition
+              })
 
-                const iwContent = `<div style="padding:5px; width:200px; text-align:center;">
-                  <strong>${location.memo}</strong><br>
-                  위도: ${location.lat.toFixed(6)}<br>
-                  경도: ${location.lng.toFixed(6)}<br>
-                  저장시간: ${location.timestamp}
-                </div>`
-                
-                const infowindow = new window.kakao.maps.InfoWindow({
-                  content: iwContent,
-                  removable: true
-                })
+              const iwContent = `<div style="padding:5px; width:200px; text-align:center;">
+                <strong>${location.memo}</strong><br>
+                위도: ${location.lat.toFixed(6)}<br>
+                경도: ${location.lng.toFixed(6)}<br>
+                저장시간: ${location.timestamp}
+              </div>`
+              
+              const infowindow = new window.kakao.maps.InfoWindow({
+                content: iwContent,
+                removable: true
+              })
 
-                window.kakao.maps.event.addListener(marker, 'click', function() {
-                  infowindow.open(map, marker)
-                })
+              window.kakao.maps.event.addListener(marker, 'click', function() {
+                infowindow.open(map, marker)
+              })
 
-                setMarkers(prev => [...prev, { marker, infowindow, id: data.location.id }])
-              }
+              setMarkers(prev => [...prev, { marker, infowindow, id: response.data.location.id }])
             }
           }
         }
@@ -540,9 +531,9 @@ export default function Home() {
                 </button>
               </div>
               <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid #ffc107', borderRadius: '8px', backgroundColor: '#fff3cd' }}>
-                {tempLocations.map((location) => (
+                {tempLocations.map((location, index) => (
                   <div 
-                    key={location.id} 
+                    key={`temp-${location.id}-${index}`} 
                     style={{ 
                       padding: '15px', 
                       borderBottom: '1px solid #ffeaa7',
@@ -630,9 +621,9 @@ export default function Home() {
                 </div>
               </div>
               <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #dee2e6', borderRadius: '8px' }}>
-                {savedLocations.map((location) => (
+                {savedLocations.map((location, index) => (
                   <div 
-                    key={location.id} 
+                    key={`saved-${location.id || location._id}-${index}`} 
                     style={{ 
                       padding: '15px', 
                       borderBottom: '1px solid #dee2e6',
@@ -719,8 +710,8 @@ export default function Home() {
                 <div style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: '20px' }}>
                   {tempLocations
                     .filter(location => selectedLocations.includes(location.id))
-                    .map(location => (
-                      <div key={location.id} style={{ 
+                    .map((location, index) => (
+                      <div key={`modal-${location.id}-${index}`} style={{ 
                         padding: '10px', 
                         border: '1px solid #dee2e6', 
                         borderRadius: '4px', 
