@@ -1,9 +1,9 @@
-import clientPromise from '@/lib/mongodb'
+import getClientPromise from '@/lib/mongodb'
 
 // GET: 저장된 위치 데이터를 JSON 파일로 내보내기
 export async function GET() {
   try {
-    const client = await clientPromise
+    const client = await getClientPromise()
     const db = client.db('Cluster0')
     const locationsData = await db.collection('locationData').find({}).toArray()
     

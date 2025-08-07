@@ -1,10 +1,10 @@
-import clientPromise from '@/lib/mongodb'
+import getClientPromise from '@/lib/mongodb'
 
 export async function GET() {
   try {
     console.log('🧪 MongoDB 연결 테스트 시작...')
     
-    const client = await clientPromise
+    const client = await getClientPromise()
     console.log('✅ MongoDB 클라이언트 연결 성공')
     
     // 데이터베이스 목록 확인

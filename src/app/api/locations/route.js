@@ -1,11 +1,11 @@
-import clientPromise from '@/lib/mongodb'
+import getClientPromise from '@/lib/mongodb'
 import { ObjectId } from 'mongodb'
 
 // GET - 모든 locations 가져오기
 export async function GET() {
   try {
     console.log('🔄 MongoDB 연결 시도...')
-    const client = await clientPromise
+    const client = await getClientPromise()
     console.log('✅ MongoDB 클라이언트 연결 성공')
     
     const db = client.db('Cluster0')
@@ -51,7 +51,7 @@ export async function POST(req) {
     }
     
     console.log('🔄 MongoDB 연결 시도...')
-    const client = await clientPromise
+    const client = await getClientPromise()
     console.log('✅ MongoDB 클라이언트 연결 성공')
     
     const db = client.db('Cluster0')
@@ -104,22 +104,31 @@ export async function DELETE(req) {
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     
-    if (!id) {
+    console.log('🗑️ DELETE 요청 - ID:', id)
+    
+    if (!id || id === 'undefined' || id === 'null') {
+      console.log('❌ 잘못된 ID:', id)
       return new Response(JSON.stringify({ error: 'ID가 필요합니다.' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       })
     }
     
-    const client = await clientPromise
+    const client = await getClientPromise()
     const db = client.db('Cluster0')
     
-    const result = await db.collection('locationData').deleteOne({ 
-      $or: [
-        { _id: new ObjectId(id) },
-        { id: parseInt(id) } // 기존 JSON의 id 필드도 지원
-      ]
-    })
+    // ObjectId 형식인지 확인
+    let deleteQuery
+    if (ObjectId.isValid(id)) {
+      deleteQuery = { _id: new ObjectId(id) }
+      console.log('🔍 ObjectId로 삭제 시도:', id)
+    } else {
+      deleteQuery = { id: parseInt(id) }
+      console.log('🔍 숫자 ID로 삭제 시도:', id)
+    }
+    
+    const result = await db.collection('locationData').deleteOne(deleteQuery)
+    console.log('🗑️ 삭제 결과:', result)
     
     if (result.deletedCount === 0) {
       return new Response(JSON.stringify({ error: 'Location을 찾을 수 없습니다.' }), {

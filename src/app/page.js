@@ -21,6 +21,12 @@ export default function Home() {
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [selectedLocations, setSelectedLocations] = useState([])
+  
+  // 주소 검색 관련 상태
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [showSearchResults, setShowSearchResults] = useState(false)
+  const [isSearching, setIsSearching] = useState(false)
 
   const handleAuth = async () => {
     try {
@@ -46,7 +52,12 @@ export default function Home() {
       const response = await axios.get('/api/locations')
       
       if (response.data.locations) {
-        setSavedLocations(response.data.locations)
+        // MongoDB의 _id를 id로 변환하여 사용
+        const locationsWithId = response.data.locations.map(location => ({
+          ...location,
+          id: location._id || location.id // _id가 있으면 _id를 사용, 없으면 기존 id 사용
+        }))
+        setSavedLocations(locationsWithId)
       }
     } catch (error) {
       console.error('저장된 위치를 불러오는 중 오류가 발생했습니다:', error)
@@ -169,6 +180,112 @@ export default function Home() {
     }
   }
 
+  // 주소 검색 함수
+  const searchAddress = async () => {
+    if (!searchKeyword.trim()) {
+      alert('검색할 주소를 입력해주세요.')
+      return
+    }
+
+    setIsSearching(true)
+    setSearchResults([])
+
+    // 카카오 지도 및 Places 서비스 확인
+    if (!window.kakao) {
+      setIsSearching(false)
+      alert('카카오맵 API가 로드되지 않았습니다.')
+      return
+    }
+
+    if (!window.kakao.maps) {
+      setIsSearching(false)
+      alert('카카오맵 라이브러리가 로드되지 않았습니다.')
+      return
+    }
+
+    if (!window.kakao.maps.services) {
+      setIsSearching(false)
+      alert('카카오맵 Places 서비스가 로드되지 않았습니다. 페이지를 새로고침해주세요.')
+      return
+    }
+
+    try {
+      const ps = new window.kakao.maps.services.Places()
+      
+      ps.keywordSearch(searchKeyword, (data, status) => {
+        setIsSearching(false)
+        
+        if (status === window.kakao.maps.services.Status.OK) {
+          console.log('🔍 검색 결과:', data)
+          setSearchResults(data.slice(0, 5)) // 상위 5개 결과만 표시
+          setShowSearchResults(true)
+        } else if (status === window.kakao.maps.services.Status.ZERO_RESULT) {
+          alert('검색 결과가 없습니다.')
+          setShowSearchResults(false)
+        } else if (status === window.kakao.maps.services.Status.ERROR) {
+          alert('검색 중 오류가 발생했습니다.')
+          setShowSearchResults(false)
+        } else {
+          alert('알 수 없는 오류가 발생했습니다.')
+          setShowSearchResults(false)
+        }
+      })
+    } catch (error) {
+      setIsSearching(false)
+      console.error('검색 오류:', error)
+      alert('검색 서비스 초기화에 실패했습니다.')
+    }
+  }
+
+  // 검색 결과 선택 함수
+  const selectSearchResult = (place) => {
+    if (map && window.kakao) {
+      const position = new window.kakao.maps.LatLng(place.y, place.x)
+      map.setCenter(position)
+      map.setLevel(3)
+      
+      // 검색 결과 닫기
+      setShowSearchResults(false)
+      setSearchKeyword('')
+      
+      // 선택한 위치에 임시 마커 표시
+      const marker = new window.kakao.maps.Marker({
+        position: position,
+        map: map
+      })
+
+      const infowindow = new window.kakao.maps.InfoWindow({
+        content: `<div style="padding:8px; text-align:center; background-color: #e8f4fd; border: 2px solid #007bff;">
+          <strong style="color: #007bff;">📍 ${place.place_name}</strong><br>
+          <small style="color: #495057;">${place.address_name}</small><br>
+          <small style="color: #6c757d;">클릭하여 위치 저장 가능</small>
+        </div>`,
+        removable: true
+      })
+
+      // 마커 클릭 시 정보창 표시
+      window.kakao.maps.event.addListener(marker, 'click', function() {
+        infowindow.open(map, marker)
+      })
+
+      // 정보창 자동으로 열기
+      infowindow.open(map, marker)
+
+      // 5초 후 임시 마커 제거
+      setTimeout(() => {
+        marker.setMap(null)
+        infowindow.close()
+      }, 5000)
+    }
+  }
+
+  // 검색창에서 엔터키 처리
+  const handleSearchKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      searchAddress()
+    }
+  }
+
   const exportLocations = async () => {
     setIsExporting(true)
     try {
@@ -245,8 +362,12 @@ export default function Home() {
           })
 
           if (response.data.success) {
-            // 영구 저장된 위치를 저장된 목록에 추가
-            setSavedLocations(prev => [...prev, response.data.location])
+            // 영구 저장된 위치를 저장된 목록에 추가 (_id를 id로 변환)
+            const locationWithId = {
+              ...response.data.location,
+              id: response.data.location._id || response.data.location.id
+            }
+            setSavedLocations(prev => [...prev, locationWithId])
             
             // 임시 마커를 일반 마커로 변경
             const tempMarker = tempMarkers.find(m => m.id === locationId)
@@ -277,7 +398,7 @@ export default function Home() {
                 infowindow.open(map, marker)
               })
 
-              setMarkers(prev => [...prev, { marker, infowindow, id: response.data.location.id }])
+              setMarkers(prev => [...prev, { marker, infowindow, id: locationWithId.id }])
             }
           }
         }
@@ -319,7 +440,7 @@ export default function Home() {
   useEffect(() => {
     if (authed && !mapLoaded) {
       const script = document.createElement('script')
-      script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=a43ad32d2234424204bab98bacbde15f&autoload=false`
+      script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=a43ad32d2234424204bab98bacbde15f&autoload=false&libraries=services,clusterer,drawing`
       script.async = true
 
       script.onload = () => {
@@ -454,16 +575,132 @@ export default function Home() {
       ) : (
         <>
           <p style={{ color: 'green' }}>{message}</p>
-          <div
-            id="map"
-            style={{
-              width: '100%',
-              height: '400px',
-              marginTop: '20px',
-              border: '2px solid #0066CC',
+          <div style={{ position: 'relative', marginTop: '20px' }}>
+            {/* 주소 검색 UI */}
+            <div style={{
+              position: 'absolute',
+              top: '10px',
+              left: '10px',
+              zIndex: 1000,
+              display: 'flex',
+              gap: '5px',
+              backgroundColor: 'white',
+              padding: '8px',
               borderRadius: '8px',
-            }}
-          ></div>
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+              border: '1px solid #ddd'
+            }}>
+              <input
+                type="text"
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                onKeyPress={handleSearchKeyPress}
+                placeholder="주소 또는 장소명 검색..."
+                style={{
+                  padding: '6px 10px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                  width: '250px'
+                }}
+              />
+              <button
+                onClick={searchAddress}
+                disabled={isSearching}
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: '#007bff',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: isSearching ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  opacity: isSearching ? 0.6 : 1
+                }}
+              >
+                {isSearching ? '🔍 검색중...' : '🔍 검색'}
+              </button>
+            </div>
+
+            {/* 검색 결과 목록 */}
+            {showSearchResults && searchResults.length > 0 && (
+              <div style={{
+                position: 'absolute',
+                top: '60px',
+                left: '10px',
+                zIndex: 1000,
+                backgroundColor: 'white',
+                border: '1px solid #ddd',
+                borderRadius: '8px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                maxHeight: '300px',
+                overflowY: 'auto',
+                minWidth: '350px'
+              }}>
+                <div style={{
+                  padding: '8px 12px',
+                  borderBottom: '1px solid #eee',
+                  backgroundColor: '#f8f9fa',
+                  fontSize: '12px',
+                  color: '#6c757d',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <span>검색 결과 ({searchResults.length}개)</span>
+                  <button
+                    onClick={() => setShowSearchResults(false)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#6c757d',
+                      cursor: 'pointer',
+                      fontSize: '16px'
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                {searchResults.map((place, index) => (
+                  <div
+                    key={`search-${place.id}-${index}`}
+                    onClick={() => selectSearchResult(place)}
+                    style={{
+                      padding: '12px',
+                      borderBottom: index < searchResults.length - 1 ? '1px solid #eee' : 'none',
+                      cursor: 'pointer',
+                      backgroundColor: 'white',
+                      transition: 'background-color 0.2s'
+                    }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = '#f8f9fa'}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = 'white'}
+                  >
+                    <div style={{ fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>
+                      📍 {place.place_name}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#666', marginBottom: '2px' }}>
+                      📧 {place.address_name}
+                    </div>
+                    {place.phone && (
+                      <div style={{ fontSize: '12px', color: '#888' }}>
+                        📞 {place.phone}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div
+              id="map"
+              style={{
+                width: '100%',
+                height: '400px',
+                border: '2px solid #0066CC',
+                borderRadius: '8px',
+              }}
+            ></div>
+          </div>
           
           {clickedPosition && (
             <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '8px', border: '1px solid #dee2e6' }}>

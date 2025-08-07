@@ -1,4 +1,4 @@
-import clientPromise from '@/lib/mongodb'
+import getClientPromise from '@/lib/mongodb'
 import nodemailer from 'nodemailer'
 
 // POST: MongoDB에서 데이터를 조회하여 이메일로 전송
@@ -17,7 +17,7 @@ export async function POST(req) {
     // MongoDB에서 위치 데이터 읽기
     let locations = { locations: [] }
     try {
-      const client = await clientPromise
+      const client = await getClientPromise()
       const db = client.db('Cluster0')
       const locationsData = await db.collection('locationData').find({}).toArray()
       console.log("🚀 ~ POST ~ locationsData:", locationsData)

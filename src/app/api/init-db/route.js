@@ -1,10 +1,10 @@
-import clientPromise from '@/lib/mongodb'
+import getClientPromise from '@/lib/mongodb'
 
 export async function POST() {
   try {
     console.log('🚀 데이터베이스 초기화 시작...')
     
-    const client = await clientPromise
+    const client = await getClientPromise()
     const db = client.db('Cluster0')
     
     // locationData 컬렉션 생성 (데이터를 삽입하면 자동으로 생성됨)
